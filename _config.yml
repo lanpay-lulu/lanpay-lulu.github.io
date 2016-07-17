@@ -5,7 +5,7 @@ header-img: img/home-bg.jpg
 email: 258200029@qq.com
 description: "关于前端与设计、黑客与画家 | 黄玄，Web & Mobile Lover，Front-End Engineer，UX Designer | 这里是 @Hux黄玄 的个人博客，与你一起发现更大的世界。"
 keyword: "Lanpay, 鬼栈,  博客, 个人网站"
-url: "http://lanpay.me"              # your host, for absolute URL
+url: ""              # your host, for absolute URL
 baseurl: ""                             # for example, '/blog' if your blog hosted on 'host/blog'
 
 
@@ -62,8 +62,8 @@ duoshuo_share: true                     # set to false if you want to use Commen
 # Baidu Analytics
 ba_track_id: 4cc1f2d8f3067386cc5cdb626a202900
 # Google Analytics
-ga_track_id: 'UA-49627206-1'            # Format: UA-xxxxxx-xx
-ga_domain: lanpay.me
+#ga_track_id: 'UA-49627206-1'            # Format: UA-xxxxxx-xx
+#ga_domain: lanpay.me
 
 
 
