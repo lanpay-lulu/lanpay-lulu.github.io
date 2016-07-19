@@ -1,7 +1,7 @@
 ---
 layout:     post
 title:      "The Dusty Chess Player：风尘棋客「转」"
-subtitle:   "React versus Angular 2: There Will Be Blood"
+subtitle:   "转一篇有思想有情怀的好文"
 date:       2016-07-18 12:00:00
 author:     "lanpay"
 header-img: "img/post-bg-re-vs-ng2.jpg"
