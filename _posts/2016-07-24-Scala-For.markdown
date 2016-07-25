@@ -22,7 +22,7 @@ scala中的for语句是它的一大利器，可以说能否正确和熟练的运
 ### 指定范围的for循环
 ```scala
 for(i <- 0 to 10) {
-  println(s"loop i is $i");
+  println(s"loop i is $i");
 }
 // 结果打印 0到10
 ``` 
@@ -57,6 +57,7 @@ for(k <- map.keys) {
 ```
 
 ## 进阶用法
+
 ### 嵌套循环
 我们知道一般语言如c++，2层嵌套循环需要写2个for语句如下：
 
