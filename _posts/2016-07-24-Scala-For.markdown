@@ -2,7 +2,7 @@
 layout:     post
 title:      "Scala For usage"
 subtitle:   "scala for 语句的用法总结"
-date:       2016-07-18 12:00:00
+date:       2016-07-24 12:00:00
 author:     "lanpay"
 header-img: "img/post-bg-re-vs-ng2.jpg"
 header-mask: 0.3
@@ -132,7 +132,7 @@ def test1(n: Int) = {
 }
 ```
 
-对于ft2函数，传入0会抛出异常，即是你加上guard，该异常仍然会发生，并在recover中被捕获。为什么呢？因为这时for被翻译成flatMap语句了，而不是常规上的for语句。
+对于ft2函数，传入0会抛出异常，即是你加上guard，该异常仍然会发生，并在recover中被捕获。为什么呢？因为这时for被翻译成flatMap语句了(见[这里](http://docs.scala-lang.org/tutorials/FAQ/yield.html))，而不是常规上的for语句。
 
 那么在for中如何处理这种future呢？
 
