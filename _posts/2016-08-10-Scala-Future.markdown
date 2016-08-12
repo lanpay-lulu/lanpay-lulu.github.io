@@ -14,6 +14,8 @@ tags:
 ---
 
 如果你用过java的多线程或异步调用，一定对future不陌生。在scala中对future有了更完善的包装和使用方法，书写异步调用非常便捷。
+future实质就是开一个线程，做指定计算，然后把结果返回。
+相比thread，它有返回值，可以做回调，更加灵活。
 
 ## 基本用法
 
@@ -28,6 +30,7 @@ val fu: Future[Int] = Future {
 }
 ``` 
 
+## 同步阻塞
 
 ```scala
 """
@@ -35,6 +38,8 @@ val fu: Future[Int] = Future {
 """
 val result = Await result (fu, 3 seconds)
 ``` 
+
+## 异步回调
 
 ```scala
 """
@@ -53,107 +58,98 @@ val callback = fu.map { x =>
 } 
 ``` 
 
-** 注意：在future外围，你无法通过加try-catch来捕获future中的异常，此时应该使用recover方法！！！**
+** 注意1：在future外围，你无法通过加try-catch来捕获future中的异常，此时应该使用recover方法！**
 
 
-### 遍历集合
-遍历seq
-
-```scala
-val seq = Seq(1,2,3,4,5)
-for(i <- seq) { 
-  println(s"$i")
-}
-```
-
-遍历map
+## 使用外围的context
 
 ```scala
-for((k,v) <- map) {
-  println(s"key=$k, val=$v")
+"""
+future可以使用外围的context变量，测试代码如下，会得到a1=1，a2=2的结果
+"""
+var a = 1
+val fu1 = Future{
+  println(s"a1=$a")
+  Thread.sleep(1000)
+  println(s"a2=$a")
 }
-for(k <- map.keys) {
-  println(s"key=$k, val=${map.get(k)}")
-}
-```
-
-## 进阶用法
-
-### 嵌套循环
-我们知道一般语言如c++，2层嵌套循环需要写2个for语句如下：
-
-```cpp
-for(int i=0; i<5; i++)
-  for(int j=i; j<10; j++)
-     printf("%d, %d\n", i, j)
+Thread.sleep(500)
+a = 2
 ``` 
 
-在scala中可以优雅的写出嵌套循环：
+** 注意2：不要在future中使用return语句。 **
+
+## 多任务future
 
 ```scala
-for(i <- 0 to 4; j <- i to 10)
-  println(s"i=$i, j=$j")
+"""
+多任务的异步调用方法如下。fuTask1和fuTask2会依次调用，这里要注意的是不能用condition guard，因为这里的for是被翻译成flatMap来执行的。
+"""
+val fus = for {
+  res1 <- fuTask1()
+  res2 <- fuTask2()
+} yield (res1, res2)
+fus.map{
+  case (res1, res2) =>
+    // do the rest with res1 and res2
+}.recover{...}
 ```
 
-### 条件语句（guard）
-scala的for循环可以做if做条件检查，其中的if语句称为guard。
+## 嵌套future
 
 ```scala
-// multi-guard
-val map = Map(1 -> "1", 2 -> "2", 3 -> "3")
-for((k,v) <- map if v < "3"; if k != 1)
-  println(s"key=$k, val=$v")
-```
-
-### yield
-for ... yield ... 语句将根据for中的子句迭代产生出一个yield子语句构成一个集合，集合类型是根据for的子句推导出的。
-
-```scala
-val res = for(i <- 1 to 5) yield i
-println(s"res = $res")
-// 生成的是vector
-for (c <- "Hello"; i <- 0 to 1) yield (c + i).toChar
-// 将生成 "HIeflmlmop"，string类型
-```
-
-## 高阶用法
-for语句除了用在循环中，还经常配合future语句使用。
-
-### for And future
-```scala
-def ft1(n: Int) = Future(n+2)
-def ft2(n: Int) = Future(24/n)
-def test1(n: Int) = {
-  for{
-    a <- ft1(n)
-    b <- ft2(n)
-  } yield (a, b)
+"""
+future的嵌套使用如下。fu2是一个Future[Future[Any]]类型，这并不方便我们在外围使用。fu3是使用flatMap将嵌套的future铺平了，它是一个Future[Any]类型，没有嵌套。
+"""
+val fu1 = fuTask1()
+val fu2 = fu1.map{ x =>
+  fuTask2(x)
 }
-```
-
-如果你使用过future，就知道future是异步调用，当我希望回调函数同时拿到几个异步调用的返回结果时，就可以使用for语句。
-注意：处理future时，不能使用guard语句。
-
-### for，future，guard And exception
-```scala
-def ft1(n: Int) = Future(n+2)
-def ft2(n: Int) = Future(24/n)
-def test1(n: Int) = {
-  val fu = for{
-    a <- ft1(n)
-    b <- ft2(n) if n>0 // guard will not working
-  } yield (a, b)
-  fu.map{
-    case (a,b) =>
-      println(s"a=$a, b=$b")
-  }.recover{
-    case e: Throwable =>
-      e.printStackTrace()
-  }
+val fu3 = fu1.flatMap{ x =>
+  fuTask3(x)
 }
-```
+```  
 
-对于ft2函数，传入0会抛出异常，即是你加上guard，该异常仍然会发生，并在recover中被捕获。为什么呢？因为这时for被翻译成flatMap语句了(见[这里](http://docs.scala-lang.org/tutorials/FAQ/yield.html))，而不是常规上的for语句。
+## future-list 和 list-future
+
+我们在处理list或者seq时，可能会对其中每个元素都产生一个异步调用。此时我们希望能统一处理异步调用的回调。
+
+```scala
+"""
+
+"""
+val list = List()
+val listFu = list.map { x =>
+  fuTask(x)
+}
+Future.sequence(listFu).map { flist => 
+  // flist是调用返回结果的list
+} 
+``` 
+
+## Execution Context 
+
+最普遍的引入ec的写法
+`import scala.concurrent.ExecutionContext.Implicits.global
+`
+
+自己创建线程池
+`  implicit val ec1 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
+`
+
+** 注意3：执行future的线程池可以指定，执行future结束后回调的线程池同样可以指定。默认是用各自的原线程池执行。 **
+
+
+
+```scala
+"""
+
+"""
+
+``` 
+
+
+并在recover中被捕获。为什么呢？因为这时for被翻译成flatMap语句了(见[这里](http://docs.scala-lang.org/tutorials/FAQ/yield.html))，而不是常规上的for语句。
 
 那么在for中如何处理这种future呢？
 
