@@ -83,7 +83,7 @@ a = 2
 
 ```scala
 """
-多任务的异步调用方法如下。fuTask1和fuTask2会依次调用，这里要注意的是不能用condition guard，因为这里的for是被翻译成flatMap来执行的。
+多任务的异步调用方法如下。fuTask1和fuTask2会依次调用，这里要注意的是不能用condition guard，因为这里的for是被翻译成flatMap来执行的，同时也必须保证fuTask1和fuTask2必须是future类型返回值。
 """
 val fus = for {
   res1 <- fuTask1()
@@ -109,6 +109,9 @@ val fu3 = fu1.flatMap{ x =>
   fuTask3(x)
 }
 ```  
+
+***注意3：flatMap内需要返回future类型。***
+
 
 ## future-list到list-future
 
@@ -155,7 +158,7 @@ fu.map{ x =>
 }(ec2)
 ``` 
 
-***注意3：当不显示指定线程池时，默认用各自的implicit线程池执行。***
+***注意4：当不显示指定线程池时，默认用各自的implicit线程池执行。***
 
 
 
