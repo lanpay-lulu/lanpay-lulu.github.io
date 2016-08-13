@@ -58,7 +58,7 @@ val callback = fu.map { x =>
 } 
 ``` 
 
-** 注意1：在future外围，你无法通过加try-catch来捕获future中的异常，此时应该使用recover方法！**
+**注意1：在future外围，你无法通过加try-catch来捕获future中的异常，此时应该使用recover方法。**
 
 
 ## 使用外围的context
@@ -77,7 +77,7 @@ Thread.sleep(500)
 a = 2
 ``` 
 
-** 注意2：不要在future中使用return语句。 **
+**注意2：不要在future中使用return语句。**
 
 ## 多任务future
 
@@ -134,10 +134,10 @@ Future.sequence(listFu).map { flist =>
 `
 
 自己创建线程池
-`  implicit val ec1 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
+`implicit val ec1 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
 `
 
-** 注意3：执行future的线程池可以指定，执行future结束后回调的线程池同样可以指定。默认是用各自的原线程池执行。 **
+**注意3：执行future的线程池可以指定，执行future结束后回调的线程池同样可以指定。默认是用各自的原线程池执行。**
 
 
 
