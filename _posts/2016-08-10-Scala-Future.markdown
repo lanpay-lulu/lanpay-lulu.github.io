@@ -110,20 +110,20 @@ val fu3 = fu1.flatMap{ x =>
 }
 ```  
 
-## future-list 和 list-future
+## future-list到list-future
 
 我们在处理list或者seq时，可能会对其中每个元素都产生一个异步调用。此时我们希望能统一处理异步调用的回调。
 
 ```scala
 """
-
+将一个future的list转化成list的future，方便拿到所有结果后再回调处理。
 """
 val list = List()
 val listFu = list.map { x =>
   fuTask(x)
 }
 Future.sequence(listFu).map { flist => 
-  // flist是调用返回结果的list
+  // do something
 } 
 ``` 
 
@@ -141,8 +141,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 implicit val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
 ```
 
-***注意3：执行future的线程池可以指定，执行future结束后回调的线程池同样可以指定。默认是用各自的implicit线程池执行。***
-
+显示指定线程池
 
 ```scala
 """
@@ -156,7 +155,7 @@ fu.map{ x =>
 }(ec2)
 ``` 
 
-
+***注意3：当不显示指定线程池时，默认用各自的implicit线程池执行。***
 
 
 
