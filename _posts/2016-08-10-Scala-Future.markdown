@@ -58,7 +58,7 @@ val callback = fu.map { x =>
 } 
 ``` 
 
-**注意1：在future外围，你无法通过加try-catch来捕获future中的异常，此时应该使用recover方法。**
+***注意1：在future外围，你无法通过加try-catch来捕获future中的异常，此时应该使用recover方法。***
 
 
 ## 使用外围的context
@@ -77,7 +77,7 @@ Thread.sleep(500)
 a = 2
 ``` 
 
-**注意2：不要在future中使用return语句。**
+***注意2：不要在future中使用return语句。***
 
 ## 多任务future
 
@@ -130,41 +130,33 @@ Future.sequence(listFu).map { flist =>
 ## Execution Context 
 
 最普遍的引入ec的写法
-`import scala.concurrent.ExecutionContext.Implicits.global
-`
+
+```scala
+import scala.concurrent.ExecutionContext.Implicits.global
+```
 
 自己创建线程池
-`implicit val ec1 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
-`
 
-**注意3：执行future的线程池可以指定，执行future结束后回调的线程池同样可以指定。默认是用各自的原线程池执行。**
+```scala
+implicit val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
+```
 
+***注意3：执行future的线程池可以指定，执行future结束后回调的线程池同样可以指定。默认是用各自的implicit线程池执行。***
 
 
 ```scala
 """
-
+指定线程池。future中使用ec1，回调使用ec2.
 """
-
+implicit val ec1 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(4))
+implicit val ec2 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(4))
+val fu = Future{/* do something */}(ec1)
+fu.map{ x =>
+  // do something
+}(ec2)
 ``` 
 
 
-并在recover中被捕获。为什么呢？因为这时for被翻译成flatMap语句了(见[这里](http://docs.scala-lang.org/tutorials/FAQ/yield.html))，而不是常规上的for语句。
-
-那么在for中如何处理这种future呢？
-
-```scala
-def predicate(condition: Boolean)(fail: Exception): Future[Unit] = 
-  if (condition) Future( () ) else Future.failed(fail)
-def test1(n: Int)
-  val fu = for {
-    a <- ft1(n)
-    _ <- predicate( a != 0 )(new MyException("divide by zero"))
-    b <- ft2(n)  // ft2 will only run if the predicate is true
-} yield (a, b)
-```
-
-然后同样是在recover中将其捕获并处理。你可能会问，这和之前的写法没什么区别嘛。这么写的好处在于你可以自定义Exception并根据异常做相应处理，而不是等到值被传入后面的future了再抛出来。
 
 
 
