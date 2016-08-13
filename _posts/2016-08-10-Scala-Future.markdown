@@ -113,6 +113,7 @@ val fu3 = fu1.flatMap{ x =>
 ## future-list到list-future
 
 我们在处理list或者seq时，可能会对其中每个元素都产生一个异步调用。此时我们希望能统一处理异步调用的回调。
+
 ```scala
 """
 将一个future的list转化成list的future，方便拿到所有结果后再回调处理。
@@ -129,16 +130,19 @@ Future.sequence(listFu).map { flist =>
 ## Execution Context 
 
 最普遍的引入ec的写法
+
 ```scala
 import scala.concurrent.ExecutionContext.Implicits.global
 ```
 
 自己创建线程池
+
 ```scala
 implicit val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(2))
 ```
 
 显示指定线程池
+
 ```scala
 """
 指定线程池。future中使用ec1，回调使用ec2.
