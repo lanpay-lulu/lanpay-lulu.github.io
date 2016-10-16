@@ -161,4 +161,39 @@ fu.map{ x =>
 ***注意4：当不显示指定线程池时，默认用各自的implicit线程池执行。***
 
 
+## Handle Exception
+
+在处理future的exception时必须十分小心，因为外围的context是无法捕获future中的异常的，我们一般有两种方式来处理future的异常。一是使用recover，二是使用onComplete结合Success，Failure。
+
+无论使用哪种方法，我们有如下几点经验。
+
+```scala
+Future{
+  Future{
+    throw new Exception("e1")
+  }
+  throw new Exception("e2")
+}.map{ x =>
+  // do something
+}.recover{
+  // can only capture e2
+}
+
+```
+
+如果使用flatMap呢？
+
+```scala
+f1.flatMap{ x =>
+  f2() // suppose f2 will throw exception e2
+  f3().map{ xx => // suppose f3 will throw exception e3
+    f4() // throw e4
+  }
+}.recover{
+  // can only capture e3
+  // can not capture e4
+}
+
+```
+
 
