@@ -82,4 +82,5 @@ class MyModule extends ScalaModule with AkkaGuiceSupport {
 
 ***注意：由于akka的actor的ref是不带泛型的，因此只能通过绑定名字来区分。***
 
+***注意2：在依赖关系中尽量做成树形结构，而不要产生circle，否则会报错 ***
 
