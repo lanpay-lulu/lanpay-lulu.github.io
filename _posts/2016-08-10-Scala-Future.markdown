@@ -107,6 +107,7 @@ fus.map{
 }).recover{...}
 ```
 
+注意：多任务的执行是顺序的，如果下一步执行需要依赖上一步的条件，可以使用predicate（参见上一篇[scala-for](https://lanpay-lulu.github.io/2016/07/24/Scala-For/)）。
 
 ## 嵌套future
 
