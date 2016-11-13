@@ -95,6 +95,19 @@ fus.map{
 }.recover{...}
 ```
 
+```scala
+"""
+与之相似的一种更紧凑的写法如下
+"""
+(for {
+  res1 <- fuTask1()
+  res2 <- fuTask2()
+} yield {
+  // do anything with res1 and res2
+}).recover{...}
+```
+
+
 ## 嵌套future
 
 ```scala
