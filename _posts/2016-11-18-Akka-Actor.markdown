@@ -177,3 +177,19 @@ class MyActor extends Actor with Stash{
 通过一个resume消息，我们将actor状体恢复正常
 
 
+## 其它
+
+### 注意事项
+
+- Actor返回的都是ActorRef，它没有泛型，使用时应该注意这点；
+- 不要在Actor中block住线程，例如使用Await等操作，这很容易让整个线程池阻塞住；
+- 获取发送方的sender()方法，需要在actor的receive的执行线程内获取，而不能在异步调用的回调中获取；
+- 不同actor之间不应该共享状态，总是使用消息来发送状态；
+
+
+### 分布式actor
+
+To be continued ...
+
+
+
