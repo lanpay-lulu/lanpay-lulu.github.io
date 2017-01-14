@@ -19,7 +19,7 @@ scala中的for语句是它的一大利器，可以说能否正确和熟练的运
 
 ## 基本用法
 
-### 指定范围的for循环
+#### 指定范围的for循环
 ```scala
 for(i <- 0 to 10) {
   println(s"loop i is $i");
@@ -35,7 +35,7 @@ for(i <- 0 until 10) {
 // 结果打印 0到9
 ``` 
 
-### 遍历集合
+#### 遍历集合
 遍历seq
 
 ```scala
@@ -58,7 +58,7 @@ for(k <- map.keys) {
 
 ## 进阶用法
 
-### 嵌套循环
+#### 嵌套循环
 我们知道一般语言如c++，2层嵌套循环需要写2个for语句如下：
 
 ```cpp
@@ -74,7 +74,7 @@ for(i <- 0 to 4; j <- i to 10)
   println(s"i=$i, j=$j")
 ```
 
-### 条件语句（guard）
+#### 条件语句（guard）
 scala的for循环可以做if做条件检查，其中的if语句称为guard。
 
 ```scala
@@ -84,7 +84,7 @@ for((k,v) <- map if v < "3"; if k != 1)
   println(s"key=$k, val=$v")
 ```
 
-### yield
+#### yield
 for ... yield ... 语句将根据for中的子句迭代产生出一个yield子语句构成一个集合，集合类型是根据for的子句推导出的。
 
 ```scala
@@ -98,7 +98,7 @@ for (c <- "Hello"; i <- 0 to 1) yield (c + i).toChar
 ## 高阶用法
 for语句除了用在循环中，还经常配合future语句使用。
 
-### for And future
+#### for And future
 ```scala
 def ft1(n: Int) = Future(n+2)
 def ft2(n: Int) = Future(24/n)
@@ -113,7 +113,7 @@ def test1(n: Int) = {
 如果你使用过future，就知道future是异步调用，当我希望回调函数同时拿到几个异步调用的返回结果时，就可以使用for语句。
 注意：处理future时，不能使用guard语句。
 
-### for，future，guard And exception
+#### for，future，guard And exception
 ```scala
 def ft1(n: Int) = Future(n+2)
 def ft2(n: Int) = Future(24/n)
