@@ -1,0 +1,286 @@
+---
+layout:     post
+title:      "Xgboost 03"
+subtitle:   "Xgboost03简介" 
+date:       2017-04-07 12:00:00
+author:     "lanpay"
+header-img: "img/post-bg-re-vs-ng2.jpg"
+header-mask: 0.3 
+catalog:    true
+tags:
+    - akka
+    - actor
+    - engineer
+---
+
+承接前文，xgboost是如何对某一维feature求解分裂点的呢？
+
+
+### Data Fields
+
+```cpp
+    // number of omp thread used during training
+    const int nthread;
+
+    // Instance Data: current node position in the tree of each instance(sample)
+    std::vector<int> position;
+
+    // PerThread x PerTreeNode: statistics for per thread construction
+    std::vector< std::vector<ThreadEntry> > stemp;
+    
+    /*! \brief TreeNode Data: statistics for each constructed node */
+    std::vector<NodeEntry> snode;
+
+    /*! \brief queue of nodes to be expanded */
+    std::vector<int> qexpand_;
+
+    // constraint value
+    std::vector<TConstraint> constraints_; 
+```
+其中比较重要的是ThreadEntry和NodeEntry。
+
+NodeEntry用来统计某个树节点的所有样本的数据。一个节点在分裂前，可以将自己的样本分给不同线程处理，每个线程统计排序好的样本序列中的一段，最后得到多个ThreadEntry 变量，汇总到每个节点自己的NodeEntry变量中。
+
+
+### EnumerateSplit 
+
+需要重点注意的是，对于data只遍历了一遍，每一个sample data取出来以后，
+会更新它所属的leaf node的分裂信息，并计算按它分裂是否更优。
+
+也即，对于某一维度的feature，是同时计算当前层的所有叶节点的最优分裂信息。
+
+```cpp
+// enumerate the split values of specific feature
+    inline void EnumerateSplit(const ColBatch::Entry *begin,
+                               const ColBatch::Entry *end,
+                               int d_step, // +1 or -1, 遍历的方向
+                               bst_uint fid, // feature id
+                               const std::vector<bst_gpair> &gpair,
+                               const MetaInfo &info,
+                               std::vector<ThreadEntry> &temp) { // NOLINT(*)
+      // use cacheline aware optimization
+      if (TStats::kSimpleStats != 0 && param.cache_opt != 0) {
+        EnumerateSplitCacheOpt(begin, end, d_step, fid, gpair, temp);
+        return;
+      }
+      const std::vector<int> &qexpand = qexpand_;
+      // clear all the temp statistics
+      for (size_t j = 0; j < qexpand.size(); ++j) {
+        temp[qexpand[j]].stats.Clear();
+      }
+      // left statistics
+      TStats c(param); // TStats是模板，标准类型是params.h::GradStats。
+      for (const ColBatch::Entry *it = begin; it != end; it += d_step) {
+        const bst_uint ridx = it->index;
+        const int nid = position[ridx]; // sample所属node的id
+        if (nid < 0) continue;
+        // start working
+        const bst_float fvalue = it->fvalue;
+        // get the statistics of nid
+        ThreadEntry &e = temp[nid]; // thread统计数据
+        // test if first hit, this is fine, because we set 0 during init
+        if (e.stats.Empty()) {
+          e.stats.Add(gpair, info, ridx);
+          e.last_fvalue = fvalue;
+        } else {
+          // try to find a split
+          if (fvalue != e.last_fvalue &&
+              e.stats.sum_hess >= param.min_child_weight) { // sum_hess可以看成是样本权重。
+            c.SetSubstract(snode[nid].stats, e.stats); // sum_grad, sum_hess分别做差，存入c中。
+            if (c.sum_hess >= param.min_child_weight) { // hess是非负的，权重满足条件，可以从该处split。
+              bst_float loss_chg;
+              if (d_step == -1) {
+                /* 这里说一下CalcSplitGain，这个函数需要传入分裂后左右节点的统计数据，然后计算对应的gain；
+                 * 其中会调用CalcWeight函数，该函数是计算leaf weight，即节点预测值；
+                 * 接着调用CalcGainGivenWeight，传入sum_grad, sum_hess, w, 可以直接算出gain，用的公式是：
+                 * 2*G*w + (H+lambda)*w^2; 即需要算的obj的公式，省略了常数项。
+                 * 还可以用CalcGain来计算gain，由于没有传入leaf weight，用的是公式：
+                 * Sqr(sum_grad) / (sum_hess + lambda)
+                 * 也即算gain有两种方式，先算w再算gain的方式是为了满足一些constraints。
+                 */
+                loss_chg = static_cast<bst_float>(
+                    constraints_[nid].CalcSplitGain(param, fid, c, e.stats) -
+                    snode[nid].root_gain);
+              } else {
+                loss_chg = static_cast<bst_float>(
+                    constraints_[nid].CalcSplitGain(param, fid, e.stats, c) -
+                    snode[nid].root_gain);
+              }
+              // ThreadEntry.SplitEntry best, 第三个参数是split的value值；如果新分裂更优则update。
+              e.best.Update(loss_chg, fid, (fvalue + e.last_fvalue) * 0.5f, d_step == -1);
+            }
+          }
+          // update the statistics
+          e.stats.Add(gpair, info, ridx);
+          e.last_fvalue = fvalue;
+        }
+      }
+      // finish updating all statistics, check if it is possible to include all sum statistics
+      for (size_t i = 0; i < qexpand.size(); ++i) {
+        const int nid = qexpand[i];
+        ThreadEntry &e = temp[nid];
+        c.SetSubstract(snode[nid].stats, e.stats);
+        if (e.stats.sum_hess >= param.min_child_weight && c.sum_hess >= param.min_child_weight) {
+          bst_float loss_chg;
+          if (d_step == -1) {
+            loss_chg = static_cast<bst_float>(
+                constraints_[nid].CalcSplitGain(param, fid, c, e.stats) - snode[nid].root_gain);
+          } else {
+            loss_chg = static_cast<bst_float>(
+                constraints_[nid].CalcSplitGain(param, fid, e.stats, c) - snode[nid].root_gain);
+          }
+          const bst_float gap = std::abs(e.last_fvalue) + rt_eps;
+          const bst_float delta = d_step == +1 ? gap: -gap;
+          e.best.Update(loss_chg, fid, e.last_fvalue + delta, d_step == -1);
+        }
+      }
+    }
+```
+
+### ParallelFindSplit
+
+```cpp
+// parallel find the best split of current fid
+    // this function does not support nested functions
+    inline void ParallelFindSplit(const ColBatch::Inst &col,
+                                  bst_uint fid,
+                                  const DMatrix &fmat,
+                                  const std::vector<bst_gpair> &gpair) {
+      // TODO(tqchen): double check stats order.
+      const MetaInfo& info = fmat.info();
+      const bool ind = col.length != 0 && col.data[0].fvalue == col.data[col.length - 1].fvalue;
+      bool need_forward = param.need_forward_search(fmat.GetColDensity(fid), ind);
+      bool need_backward = param.need_backward_search(fmat.GetColDensity(fid), ind);
+      const std::vector<int> &qexpand = qexpand_;
+      #pragma omp parallel
+      {
+        const int tid = omp_get_thread_num();
+        std::vector<ThreadEntry> &temp = stemp[tid];
+        // cleanup temp statistics
+        for (size_t j = 0; j < qexpand.size(); ++j) {
+          temp[qexpand[j]].stats.Clear();
+        }
+        bst_uint step = (col.length + this->nthread - 1) / this->nthread;
+        bst_uint end = std::min(col.length, step * (tid + 1));
+        for (bst_uint i = tid * step; i < end; ++i) {
+          const bst_uint ridx = col[i].index;
+          const int nid = position[ridx];
+          if (nid < 0) continue;
+          const bst_float fvalue = col[i].fvalue;
+          if (temp[nid].stats.Empty()) {
+            temp[nid].first_fvalue = fvalue;
+          }
+          temp[nid].stats.Add(gpair, info, ridx);
+          temp[nid].last_fvalue = fvalue;
+        }
+      }
+      // start collecting the partial sum statistics
+      bst_omp_uint nnode = static_cast<bst_omp_uint>(qexpand.size());
+      #pragma omp parallel for schedule(static)
+      for (bst_omp_uint j = 0; j < nnode; ++j) {
+        const int nid = qexpand[j];
+        TStats sum(param), tmp(param), c(param);
+        for (int tid = 0; tid < this->nthread; ++tid) {
+          tmp = stemp[tid][nid].stats;
+          stemp[tid][nid].stats = sum;
+          sum.Add(tmp);
+          if (tid != 0) {
+            std::swap(stemp[tid - 1][nid].last_fvalue, stemp[tid][nid].first_fvalue);
+          }
+        }
+        for (int tid = 0; tid < this->nthread; ++tid) {
+          stemp[tid][nid].stats_extra = sum;
+          ThreadEntry &e = stemp[tid][nid];
+          bst_float fsplit;
+          if (tid != 0) {
+            if (stemp[tid - 1][nid].last_fvalue != e.first_fvalue) {
+              fsplit = (stemp[tid - 1][nid].last_fvalue + e.first_fvalue) * 0.5f;
+            } else {
+              continue;
+            }
+          } else {
+            fsplit = e.first_fvalue - rt_eps;
+          }
+          if (need_forward && tid != 0) {
+            c.SetSubstract(snode[nid].stats, e.stats);
+            if (c.sum_hess >= param.min_child_weight &&
+                e.stats.sum_hess >= param.min_child_weight) {
+              bst_float loss_chg = static_cast<bst_float>(
+                  constraints_[nid].CalcSplitGain(param, fid, e.stats, c) - snode[nid].root_gain);
+              e.best.Update(loss_chg, fid, fsplit, false);
+            }
+          }
+          if (need_backward) {
+            tmp.SetSubstract(sum, e.stats);
+            c.SetSubstract(snode[nid].stats, tmp);
+            if (c.sum_hess >= param.min_child_weight &&
+                tmp.sum_hess >= param.min_child_weight) {
+              bst_float loss_chg = static_cast<bst_float>(
+                  constraints_[nid].CalcSplitGain(param, fid, tmp, c) - snode[nid].root_gain);
+              e.best.Update(loss_chg, fid, fsplit, true);
+            }
+          }
+        }
+        if (need_backward) {
+          tmp = sum;
+          ThreadEntry &e = stemp[this->nthread-1][nid];
+          c.SetSubstract(snode[nid].stats, tmp);
+          if (c.sum_hess >= param.min_child_weight &&
+              tmp.sum_hess >= param.min_child_weight) {
+            bst_float loss_chg = static_cast<bst_float>(
+                constraints_[nid].CalcSplitGain(param, fid, tmp, c) - snode[nid].root_gain);
+            e.best.Update(loss_chg, fid, e.last_fvalue + rt_eps, true);
+          }
+        }
+      }
+      // rescan, generate candidate split
+      #pragma omp parallel
+      {
+        TStats c(param), cright(param);
+        const int tid = omp_get_thread_num();
+        std::vector<ThreadEntry> &temp = stemp[tid];
+        bst_uint step = (col.length + this->nthread - 1) / this->nthread;
+        bst_uint end = std::min(col.length, step * (tid + 1));
+        for (bst_uint i = tid * step; i < end; ++i) {
+          const bst_uint ridx = col[i].index;
+          const int nid = position[ridx];
+          if (nid < 0) continue;
+          const bst_float fvalue = col[i].fvalue;
+          // get the statistics of nid
+          ThreadEntry &e = temp[nid];
+          if (e.stats.Empty()) {
+            e.stats.Add(gpair, info, ridx);
+            e.first_fvalue = fvalue;
+          } else {
+            // forward default right
+            if (fvalue != e.first_fvalue) {
+              if (need_forward) {
+                c.SetSubstract(snode[nid].stats, e.stats);
+                if (c.sum_hess >= param.min_child_weight &&
+                    e.stats.sum_hess >= param.min_child_weight) {
+                  bst_float loss_chg = static_cast<bst_float>(
+                      constraints_[nid].CalcSplitGain(param, fid, e.stats, c) -
+                      snode[nid].root_gain);
+                  e.best.Update(loss_chg, fid, (fvalue + e.first_fvalue) * 0.5f, false);
+                }
+              }
+              if (need_backward) {
+                cright.SetSubstract(e.stats_extra, e.stats);
+                c.SetSubstract(snode[nid].stats, cright);
+                if (c.sum_hess >= param.min_child_weight &&
+                    cright.sum_hess >= param.min_child_weight) {
+                  bst_float loss_chg = static_cast<bst_float>(
+                      constraints_[nid].CalcSplitGain(param, fid, c, cright) -
+                      snode[nid].root_gain);
+                  e.best.Update(loss_chg, fid, (fvalue + e.first_fvalue) * 0.5f, true);
+                }
+              }
+            }
+            e.stats.Add(gpair, info, ridx);
+            e.first_fvalue = fvalue;
+          }
+        }
+      }
+    }
+```
+
