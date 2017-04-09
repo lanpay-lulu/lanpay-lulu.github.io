@@ -17,22 +17,22 @@ tags:
 程序入口。
 
 - learner.cc
-负责参数的解析，rabit的checkpoint调用，控制iter流程。
+        负责参数的解析，rabit的checkpoint调用，控制iter流程。
 
 - data
-存放定义的若干数据结构，包括矩阵，系数矩阵等。
+        存放定义的若干数据结构，包括矩阵，系数矩阵等。
 
 - gbm
-定义了两种boosting基础模型：树和linear。
+        定义了两种boosting基础模型：树和linear。
 
 - metric
-定义了若干种特殊模型的度量，如：rank_metric，multiclass_metric等。
+        定义了若干种特殊模型的度量，如：rank_metric，multiclass_metric等。
 
 - objective
-定义了若干种模型的目标函数，以及对应的一阶和二阶梯度计算方法。
+        定义了若干种模型的目标函数，以及对应的一阶和二阶梯度计算方法。
 
 - tree
-定义了树模型和树的updater，updater包括分裂叶节点、剪纸等。
+        定义了树模型和树的updater，updater包括分裂叶节点、剪纸等。
 
 ### 训练入口代码
 
@@ -159,6 +159,11 @@ void CLITrain(const CLIParam& param) {
   }
 }
 ```
+
+### Reference
+[来自知乎](https://www.zhihu.com/question/41354392)
+[来自CSDN](http://blog.csdn.net/chedan541300521/article/details/54895880)
+
 
 （未完待续）
 
