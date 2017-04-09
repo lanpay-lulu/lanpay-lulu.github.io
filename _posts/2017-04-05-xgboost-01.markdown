@@ -1,7 +1,7 @@
 ---
 layout:     post
 title:      "xgboost 01"
-subtitle:   "xgboost简介01" 
+subtitle:   "xgboost源码解读01" 
 date:       2017-04-05 12:00:00
 author:     "lanpay"
 header-img: "img/post-bg-re-vs-ng2.jpg"
@@ -16,7 +16,7 @@ tags:
 - cli_main.cc
 程序入口。
 
-- learner.cc
+- learner.cc  
         负责参数的解析，rabit的checkpoint调用，控制iter流程。
 
 - data
@@ -162,6 +162,7 @@ void CLITrain(const CLIParam& param) {
 
 ### Reference
 [来自知乎](https://www.zhihu.com/question/41354392)
+
 [来自CSDN](http://blog.csdn.net/chedan541300521/article/details/54895880)
 
 
