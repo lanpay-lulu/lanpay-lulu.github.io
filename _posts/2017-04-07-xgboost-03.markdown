@@ -49,6 +49,8 @@ NodeEntry用来统计某个树节点的所有样本的数据。一个节点在�
 
 也即，对于某一维度的feature，是同时计算当前层的所有叶节点的最优分裂信息。
 
+注意：xgboost要求loss是凸函数，也即其hess始终为正。同时论文中也分析过，hess可以作为样本的权重，从这个角度讲，也需要hess是正数。实践中，由于溢出等原因，某些时候hess可能为负，此时该样本是被舍弃了。
+
 ```cpp
 // enumerate the split values of specific feature
     inline void EnumerateSplit(const ColBatch::Entry *begin,
@@ -139,6 +141,17 @@ NodeEntry用来统计某个树节点的所有样本的数据。一个节点在�
 
 ### ParallelFindSplit
 
+对某一维的feature，使用多线程查找split的最优位置。
+
+- 每个线程分得一段连续数据，在每一段数据内计算统计数据，存到对应stemp[tid][nid]中；
+
+- 然后将每个线程的数据，汇总到一起，即对每一个leaf node，分配一个thread统计上面每一段数据的统计信息；
+如stem[tid][nid]，tid是线程号，nid是叶节点号。
+
+- 承接上面thread的分配，计算段与段的衔接点作为split的最优位置。
+
+- rescan，每段数据一个线程，统计段内split的最优位置。
+
 ```cpp
 // parallel find the best split of current fid
     // this function does not support nested functions
@@ -154,12 +167,15 @@ NodeEntry用来统计某个树节点的所有样本的数据。一个节点在�
       const std::vector<int> &qexpand = qexpand_;
       #pragma omp parallel
       {
+      // code in this block will be executed in every thread involved.
+        // 每个thread分配一段数据，计算相关统计数据。
         const int tid = omp_get_thread_num();
         std::vector<ThreadEntry> &temp = stemp[tid];
         // cleanup temp statistics
         for (size_t j = 0; j < qexpand.size(); ++j) {
           temp[qexpand[j]].stats.Clear();
         }
+        // get samples begin and end for this thread.
         bst_uint step = (col.length + this->nthread - 1) / this->nthread;
         bst_uint end = std::min(col.length, step * (tid + 1));
         for (bst_uint i = tid * step; i < end; ++i) {
@@ -178,6 +194,7 @@ NodeEntry用来统计某个树节点的所有样本的数据。一个节点在�
       bst_omp_uint nnode = static_cast<bst_omp_uint>(qexpand.size());
       #pragma omp parallel for schedule(static)
       for (bst_omp_uint j = 0; j < nnode; ++j) {
+        // 每个叶节点分配一个thread，统计该叶节点上的sample的统计信息，需要从上述nid个部分去取。
         const int nid = qexpand[j];
         TStats sum(param), tmp(param), c(param);
         for (int tid = 0; tid < this->nthread; ++tid) {
@@ -188,6 +205,7 @@ NodeEntry用来统计某个树节点的所有样本的数据。一个节点在�
             std::swap(stemp[tid - 1][nid].last_fvalue, stemp[tid][nid].first_fvalue);
           }
         }
+        // 计算段与段衔接点split的最优位置。
         for (int tid = 0; tid < this->nthread; ++tid) {
           stemp[tid][nid].stats_extra = sum;
           ThreadEntry &e = stemp[tid][nid];
@@ -235,7 +253,8 @@ NodeEntry用来统计某个树节点的所有样本的数据。一个节点在�
       }
       // rescan, generate candidate split
       #pragma omp parallel
-      {
+      { 
+        // 每个线程统计段内split的最优位置 
         TStats c(param), cright(param);
         const int tid = omp_get_thread_num();
         std::vector<ThreadEntry> &temp = stemp[tid];

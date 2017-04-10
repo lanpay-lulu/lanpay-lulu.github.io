@@ -13,25 +13,25 @@ tags:
 
 ### 代码结构
 代码结构如下：
-- cli_main.cc
-程序入口。
+- cli_main.cc  
+        程序入口。
 
 - learner.cc  
         负责参数的解析，rabit的checkpoint调用，控制iter流程。
 
-- data
+- data  
         存放定义的若干数据结构，包括矩阵，系数矩阵等。
 
-- gbm
+- gbm  
         定义了两种boosting基础模型：树和linear。
 
-- metric
+- metric  
         定义了若干种特殊模型的度量，如：rank_metric，multiclass_metric等。
 
-- objective
+- objective  
         定义了若干种模型的目标函数，以及对应的一阶和二阶梯度计算方法。
 
-- tree
+- tree  
         定义了树模型和树的updater，updater包括分裂叶节点、剪纸等。
 
 ### 训练入口代码
