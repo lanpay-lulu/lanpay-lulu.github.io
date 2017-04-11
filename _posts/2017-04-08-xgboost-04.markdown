@@ -1,0 +1,49 @@
+---
+layout:     post
+title:      "Xgboost 04"
+subtitle:   "Xgboost源码简介04" 
+date:       2017-04-08 12:00:00
+author:     "lanpay"
+header-img: "img/post-bg-re-vs-ng2.jpg"
+header-mask: 0.3 
+catalog:    true
+tags:
+    - akka
+    - actor
+    - engineer
+---
+
+前面几篇讲解了单机版多线程xgboost的精确建树方法，本篇介绍xgboost近似建树方法，主要用到的是hist方法。
+
+如果我们需要使用近似方法，需要做如下配置。
+- *tree_method=hist*  
+    会使用grow_fast_histmaker;  
+    在多个iteration之间复用bins，从而能够优化cache，使用Histogram subtraction trick等优化;  
+    max_bin的default值是256；  
+    （该方法是新加的，相关文档https://github.com/dmlc/xgboost/issues/1950，与LightGBM的方法相似）
+
+- *tree_method=approx*  
+    会使用grow_histmaker;  
+    每个iteration都会重新构建bins；
+
+代码分别在如下两个相关文件中
+- *updater_fast_hist.cc* quantized直方图
+- *updater_histmaker.cc* 普通直方图
+
+### 基本思路
+xgboost的近似建树使用的是hist方法。这里举个例子，加入我们数据的某一维度数值是[0.1, 0.12, 1, 1, 2, 12, 13, 13]，我们肉眼很容易看出，在0.6附近和6附近有比较好的分裂点。同理，对于大量数据，如果有较多数据的值相等，或者距离很近，将它们作为一个桶来捆绑在一起似乎是一种不错的方法。多个桶在一起就构成了数据的直方图。通过构建直方图，可以将大量数据作为一个整体考虑，而split点只需要从桶与桶之间产生，这将大大减少计算量，还获得了一定的正则效果。
+
+微软的lightGBM，甚至将直方图作为它们gbdt的默认实现，足以见得在大数据下该方法的优势。
+
+### 代码分析
+
+
+```cpp
+```
+
+
+### 处理Missing数据
+如果某数据的某feature值为NAN，则表示该信息missing。一般来说我们需要预处理该类型的数据，如使用均值、使用中位数、对该条数据丢弃等方法。xgboost可以处理这种数据。它在做split时，让所有missing值的sample分到左子树或者右子树。因为gbdt中，feature的本质是用来排序，因此可以采取这种处理。
+
+关于missing data的处理，主要是在*updater_fast_hist.cc*文件中，即只有quantized直方图方法支持处理missing data。
+
