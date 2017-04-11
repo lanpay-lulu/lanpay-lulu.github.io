@@ -364,6 +364,7 @@ inline void EvaluateSplit(int nid,
 
 该方法是原始paper中的实现，对于每一维度feature，会根据它们的值分布计算可能的split点，构造hist图，并确定最优分裂点。其中一个问题是如何获得split candidate。paper将其转化为如下的问题：
     每个sample的权重为其hess值，因此权重百分比为hess/total_hess。首先根据feature值排序，然后会设置一个超参数gamma，使得划分的桶中的sample的权重百分比之和不大于gamma。具体如何划分呢？paper中提出了一种sketch的方法来做这件事。个人感觉这部分的重要性不大，比如LightGBM中就采用的是很简洁直白的实现，因此不必太过纠结这一块。
+    gamma在参数中名称是sketch_eps，容易看出，大致会有（1/sketch_eps）个桶。
 
 其策略也分为两种：
 - global  
