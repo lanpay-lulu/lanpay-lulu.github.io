@@ -42,6 +42,9 @@ xgboost的近似建树使用的是hist方法。这里举个例子，加入我们
 
 关于missing data的处理，主要是在*updater_fast_hist.cc*文件中，即只有quantized直方图方法支持处理missing data。
 
+### 处理稀疏特征
+由于数据原因，或者采用了one-hot encoding，有部分feature的数据很可能是十分稀疏的。这时可以按照missing data的处理方法，把稀疏数据中的大部分看作missing data，从而只需要遍历那些稀疏值，而missing数据则全部放入左边或者右边子树，不需要挨个遍历。
+
 
 ### 代码分析之 updater fast hist
 
@@ -359,7 +362,8 @@ inline void EvaluateSplit(int nid,
 
 ### 代码分析之 updater histmaker
 
-该方法对于每一维度feature，会根据它们的值分布计算可能的split点，构造hist图，并确定最优分裂点。
+该方法是原始paper中的实现，对于每一维度feature，会根据它们的值分布计算可能的split点，构造hist图，并确定最优分裂点。其中一个问题是如何获得split candidate。paper将其转化为如下的问题：
+    每个sample的权重为其hess值，因此权重百分比为hess/total_hess。首先根据feature值排序，然后会设置一个超参数gamma，使得划分的桶中的sample的权重百分比之和不大于gamma。具体如何划分呢？paper中提出了一种sketch的方法来做这件事。个人感觉这部分的重要性不大，比如LightGBM中就采用的是很简洁直白的实现，因此不必太过纠结这一块。
 
 其策略也分为两种：
 - global  
@@ -367,6 +371,10 @@ inline void EvaluateSplit(int nid,
 
 - local  
     每次分裂后都重新计算可能的split point候选值。当树的深度较大时，用这种方法获得的结果更好。
+
+
+
+
 
 ```cpp
 该方法使用了基类和若干衍生类，有时间再做细致分析。
