@@ -20,7 +20,7 @@ tags:
     会使用grow_fast_histmaker;  
     在多个iteration之间复用bins，从而能够优化cache，使用Histogram subtraction trick等优化;  
     max_bin的default值是256；  
-    （该方法是新加的，相关文档https://github.com/dmlc/xgboost/issues/1950，与LightGBM的方法相似）
+    （该方法是新加的，(相关文档)[https://github.com/dmlc/xgboost/issues/1950]，与LightGBM的方法相似）
 
 - *tree_method=approx*  
     会使用grow_histmaker;  
@@ -35,15 +35,246 @@ xgboost的近似建树使用的是hist方法。这里举个例子，加入我们
 
 微软的lightGBM，甚至将直方图作为它们gbdt的默认实现，足以见得在大数据下该方法的优势。
 
-### 代码分析
-
-
-```cpp
-```
-
 
 ### 处理Missing数据
 如果某数据的某feature值为NAN，则表示该信息missing。一般来说我们需要预处理该类型的数据，如使用均值、使用中位数、对该条数据丢弃等方法。xgboost可以处理这种数据。它在做split时，让所有missing值的sample分到左子树或者右子树。因为gbdt中，feature的本质是用来排序，因此可以采取这种处理。
 
 关于missing data的处理，主要是在*updater_fast_hist.cc*文件中，即只有quantized直方图方法支持处理missing data。
+
+
+### 代码分析之 updater fast hist
+
+```cpp
+// update one tree, growing
+    virtual void Update(const GHistIndexMatrix& gmat,
+                        const ColumnMatrix& column_matrix,
+                        const std::vector<bst_gpair>& gpair,
+                        DMatrix* p_fmat,
+                        RegTree* p_tree) {
+      double gstart = dmlc::GetTime();
+
+      int num_leaves = 0;
+      unsigned timestamp = 0;
+
+      double tstart;
+      double time_init_data = 0;
+      double time_init_new_node = 0;
+      double time_build_hist = 0;
+      double time_evaluate_split = 0;
+      double time_apply_split = 0;
+
+      tstart = dmlc::GetTime();
+      this->InitData(gmat, gpair, *p_fmat, *p_tree);
+      std::vector<bst_uint> feat_set = feat_index;
+      time_init_data = dmlc::GetTime() - tstart;
+
+      // FIXME(hcho3): this code is broken when param.num_roots > 1. Please fix it
+      CHECK_EQ(p_tree->param.num_roots, 1)
+        << "tree_method=hist does not support multiple roots at this moment";
+      for (int nid = 0; nid < p_tree->param.num_roots; ++nid) {
+        tstart = dmlc::GetTime();
+        hist_.AddHistRow(nid);
+        builder_.BuildHist(gpair, row_set_collection_[nid], gmat, feat_set, hist_[nid]);
+        time_build_hist += dmlc::GetTime() - tstart;
+
+        tstart = dmlc::GetTime();
+        this->InitNewNode(nid, gmat, gpair, *p_fmat, *p_tree);
+        time_init_new_node += dmlc::GetTime() - tstart;
+
+        tstart = dmlc::GetTime();
+        this->EvaluateSplit(nid, gmat, hist_, *p_fmat, *p_tree, feat_set);
+        time_evaluate_split += dmlc::GetTime() - tstart;
+        qexpand_->push(ExpandEntry(nid, p_tree->GetDepth(nid),
+                                   snode[nid].best.loss_chg,
+                                   timestamp++));
+        ++num_leaves;
+      }
+
+      while (!qexpand_->empty()) {
+        const ExpandEntry candidate = qexpand_->top();
+        const int nid = candidate.nid;
+        qexpand_->pop();
+        if (candidate.loss_chg <= rt_eps
+            || (param.max_depth > 0 && candidate.depth == param.max_depth)
+            || (param.max_leaves > 0 && num_leaves == param.max_leaves) ) {
+          (*p_tree)[nid].set_leaf(snode[nid].weight * param.learning_rate);
+        } else {
+          tstart = dmlc::GetTime();
+          this->ApplySplit(nid, gmat, column_matrix, hist_, *p_fmat, p_tree);
+          time_apply_split += dmlc::GetTime() - tstart;
+
+          tstart = dmlc::GetTime();
+          const int cleft = (*p_tree)[nid].cleft();
+          const int cright = (*p_tree)[nid].cright();
+          hist_.AddHistRow(cleft);
+          hist_.AddHistRow(cright);
+          if (row_set_collection_[cleft].size() < row_set_collection_[cright].size()) {
+            builder_.BuildHist(gpair, row_set_collection_[cleft], gmat, feat_set,
+                               hist_[cleft]);
+            builder_.SubtractionTrick(hist_[cright], hist_[cleft], hist_[nid]);
+          } else {
+            builder_.BuildHist(gpair, row_set_collection_[cright], gmat, feat_set,
+                               hist_[cright]);
+            builder_.SubtractionTrick(hist_[cleft], hist_[cright], hist_[nid]);
+          }
+          time_build_hist += dmlc::GetTime() - tstart;
+
+          tstart = dmlc::GetTime();
+          this->InitNewNode(cleft, gmat, gpair, *p_fmat, *p_tree);
+          this->InitNewNode(cright, gmat, gpair, *p_fmat, *p_tree);
+          time_init_new_node += dmlc::GetTime() - tstart;
+
+          tstart = dmlc::GetTime();
+          this->EvaluateSplit(cleft, gmat, hist_, *p_fmat, *p_tree, feat_set);
+          this->EvaluateSplit(cright, gmat, hist_, *p_fmat, *p_tree, feat_set);
+          time_evaluate_split += dmlc::GetTime() - tstart;
+
+          qexpand_->push(ExpandEntry(cleft, p_tree->GetDepth(cleft),
+                                     snode[cleft].best.loss_chg,
+                                     timestamp++));
+          qexpand_->push(ExpandEntry(cright, p_tree->GetDepth(cright),
+                                     snode[cright].best.loss_chg,
+                                     timestamp++));
+
+          ++num_leaves;  // give two and take one, as parent is no longer a leaf
+        }
+      }
+
+      // set all the rest expanding nodes to leaf
+      // This post condition is not needed in current code, but may be necessary
+      // when there are stopping rule that leaves qexpand non-empty
+      while (!qexpand_->empty()) {
+        const int nid = qexpand_->top().nid;
+        qexpand_->pop();
+        (*p_tree)[nid].set_leaf(snode[nid].weight * param.learning_rate);
+      }
+      // remember auxiliary statistics in the tree node
+      for (int nid = 0; nid < p_tree->param.num_nodes; ++nid) {
+        p_tree->stat(nid).loss_chg = snode[nid].best.loss_chg;
+        p_tree->stat(nid).base_weight = snode[nid].weight;
+        p_tree->stat(nid).sum_hess = static_cast<float>(snode[nid].stats.sum_hess);
+        snode[nid].stats.SetLeafVec(param, p_tree->leafvec(nid));
+      }
+
+      pruner_->Update(gpair, p_fmat, std::vector<RegTree*>{p_tree});
+      
+      // logging ...
+    }
+```
+
+
+
+其中会调用函数EvaluateSplit来查找分裂点。
+
+```cpp
+inline void EvaluateSplit(int nid,
+                              const GHistIndexMatrix& gmat,
+                              const HistCollection& hist,
+                              const DMatrix& fmat,
+                              const RegTree& tree,
+                              const std::vector<bst_uint>& feat_set) {
+      // start enumeration
+      const MetaInfo& info = fmat.info();
+      const bst_omp_uint nfeature = feat_set.size();
+      const bst_omp_uint nthread = static_cast<bst_omp_uint>(this->nthread);
+      best_split_tloc_.resize(nthread);
+      #pragma omp parallel for schedule(static) num_threads(nthread)
+      for (bst_omp_uint tid = 0; tid < nthread; ++tid) {
+        best_split_tloc_[tid] = snode[nid].best;
+      }
+      #pragma omp parallel for schedule(dynamic) num_threads(nthread)
+      for (bst_omp_uint i = 0; i < nfeature; ++i) {
+        const bst_uint fid = feat_set[i];
+        const unsigned tid = omp_get_thread_num();
+        this->EnumerateSplit(-1, gmat, hist[nid], snode[nid], constraints_[nid], info,
+          &best_split_tloc_[tid], fid);
+        this->EnumerateSplit(+1, gmat, hist[nid], snode[nid], constraints_[nid], info,
+          &best_split_tloc_[tid], fid);
+      }
+      for (unsigned tid = 0; tid < nthread; ++tid) {
+        snode[nid].best.Update(best_split_tloc_[tid]);
+      }
+    }
+```
+
+其中会用到函数EnumerateSplit
+
+```cpp
+// enumerate the split values of specific feature
+    inline void EnumerateSplit(int d_step,
+                               const GHistIndexMatrix& gmat,
+                               const GHistRow& hist,
+                               const NodeEntry& snode,
+                               const TConstraint& constraint,
+                               const MetaInfo& info,
+                               SplitEntry* p_best,
+                               bst_uint fid) {
+      CHECK(d_step == +1 || d_step == -1);
+
+      // aliases
+      const std::vector<unsigned>& cut_ptr = gmat.cut->row_ptr;
+      const std::vector<bst_float>& cut_val = gmat.cut->cut;
+
+      // statistics on both sides of split
+      TStats c(param);
+      TStats e(param);
+      // best split so far
+      SplitEntry best;
+
+      // bin boundaries
+      // imin: index (offset) of the minimum value for feature fid
+      //       need this for backward enumeration
+      const int imin = cut_ptr[fid];
+      // ibegin, iend: smallest/largest cut points for feature fid
+      int ibegin, iend;
+      if (d_step > 0) {
+        ibegin = cut_ptr[fid];
+        iend = cut_ptr[fid + 1];
+      } else {
+        ibegin = cut_ptr[fid + 1] - 1;
+        iend = cut_ptr[fid] - 1;
+      }
+
+      for (int i = ibegin; i != iend; i += d_step) {
+        // start working
+        // try to find a split
+        e.Add(hist.begin[i].sum_grad, hist.begin[i].sum_hess);
+        if (e.sum_hess >= param.min_child_weight) {
+          c.SetSubstract(snode.stats, e);
+          if (c.sum_hess >= param.min_child_weight) {
+            bst_float loss_chg;
+            bst_float split_pt;
+            if (d_step > 0) {
+              // forward enumeration: split at right bound of each bin
+              loss_chg = static_cast<bst_float>(
+                  constraint.CalcSplitGain(param, fid, e, c) -
+                  snode.root_gain);
+              split_pt = cut_val[i];
+            } else {
+              // backward enumeration: split at left bound of each bin
+              loss_chg = static_cast<bst_float>(
+                  constraint.CalcSplitGain(param, fid, c, e) -
+                  snode.root_gain);
+              if (i == imin) {
+                // for leftmost bin, left bound is the smallest feature value
+                split_pt = gmat.cut->min_val[fid];
+              } else {
+                split_pt = cut_val[i - 1];
+              }
+            }
+            best.Update(loss_chg, fid, split_pt, d_step == -1);
+          }
+        }
+      }
+      p_best->Update(best);
+    }
+```
+
+
+
+### 代码分析之 updater histmaker
+
+```cpp
+该方法使用了基类和若干衍生类，有时间再做细致分析。
+```
 
