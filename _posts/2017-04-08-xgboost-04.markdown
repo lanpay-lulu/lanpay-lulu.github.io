@@ -1,5 +1,4 @@
 ---
-```cpp
 layout:     post
 title:      "Xgboost 04"
 subtitle:   "Xgboost源码简介04 - 近似建树法" 
