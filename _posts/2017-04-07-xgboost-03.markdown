@@ -1,7 +1,7 @@
 ---
 layout:     post
 title:      "Xgboost 03"
-subtitle:   "Xgboost03简介" 
+subtitle:   "Xgboost源码解读03 - 寻找分裂点" 
 date:       2017-04-07 12:00:00
 author:     "lanpay"
 header-img: "img/post-bg-re-vs-ng2.jpg"

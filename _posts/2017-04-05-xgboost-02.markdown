@@ -1,7 +1,7 @@
 ---
 layout:     post
 title:      "Xgboost 02"
-subtitle:   "Xgboost02简介" 
+subtitle:   "Xgboost源码解读02 - 建树流程" 
 date:       2017-04-06 12:00:00
 author:     "lanpay"
 header-img: "img/post-bg-re-vs-ng2.jpg"
