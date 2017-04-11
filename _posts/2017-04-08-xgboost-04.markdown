@@ -20,7 +20,7 @@ tags:
     会使用grow_fast_histmaker;  
     在多个iteration之间复用bins，从而能够优化cache，使用Histogram subtraction trick等优化;  
     max_bin的default值是256；  
-    （该方法是新加的，(相关文档)[https://github.com/dmlc/xgboost/issues/1950]，与LightGBM的方法相似）
+    （该方法是新加的，[相关文档](https://github.com/dmlc/xgboost/issues/1950)，与LightGBM的方法相似）
 
 - *tree_method=approx*  
     会使用grow_histmaker;  
